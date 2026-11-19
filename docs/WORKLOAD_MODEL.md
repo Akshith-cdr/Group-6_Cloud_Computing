@@ -208,8 +208,12 @@ together; it does not divide per-PE service time. Batch tasks have no response-t
 Run `mvn exec:java '-Dexec.args=--feasibility'` for per-class/task-derived feasibility in every scenario.
 Supply one or more candidate property files after `--feasibility` to compare explicit named
 alternatives. `experiments/service-bound-demo.properties` is an unapproved mathematical example,
-not a selected comparison workload. `Calibration` copies configuration/profile maps and changes only
-explicit length/target fields. Seed, arrivals, class mix, PEs, RAM and topology remain fixed.
+not a selected comparison workload. `Calibration.load` copies configuration/profile maps and changes
+only explicit length/target fields. Use `Calibration.generateTrace(candidate, originalTrace)` to retain
+the original sampled IDs, arrivals, classes, PEs and RAM; only changed length ranges are sampled anew.
+Target-only candidates retain exact lengths as well. The CLI uses this path. A fresh direct call to
+`WorkloadGenerator` with changed ranges may consume different random draws, so it is not a substitute
+for controlled calibration. Seed and topology remain fixed.
 Candidate run metadata must retain the candidate name and `UNAPPROVED_COMPARISON_CANDIDATE` purpose;
 stress runs use `original-stress` and `ORIGINAL_STRESS`. No approved comparison values are selected here.
 

@@ -18,7 +18,7 @@ class EvaluationTest {
     @TempDir Path temporary;
 
     private static TaskMetadata task(long id, WorkloadClass type, long length, int pes) {
-        return new TaskMetadata(id, type, 100, length, pes, 512,
+        return new TaskMetadata(id, type, 1, length, pes, 512,
             type == WorkloadClass.BATCH ? OptionalDouble.empty() : OptionalDouble.of(5), 42);
     }
     private static OptionalDouble at(double time) { return OptionalDouble.of(time); }
@@ -129,7 +129,7 @@ class EvaluationTest {
         var candidate = Calibration.load(Path.of("experiments/service-bound-demo.properties"), original);
         assertNotEquals(original, candidate.config());
         assertEquals(original, WorkloadGenerationConfig.defaults(scenario));
-        var alternative = new WorkloadGenerator().generate(candidate.config());
+        var alternative = Calibration.generateTrace(candidate, trace);
         for (int i = 0; i < trace.tasks().size(); i++) {
             var a = trace.tasks().get(i); var b = alternative.tasks().get(i);
             assertEquals(a.arrivalTimeSeconds(), b.arrivalTimeSeconds()); assertEquals(a.workloadClass(), b.workloadClass());

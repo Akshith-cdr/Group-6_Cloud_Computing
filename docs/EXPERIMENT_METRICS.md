@@ -74,6 +74,9 @@ responseTime = queueWaitTime + preExecutionDelay + serviceTime
 Queue wait includes any delay before ready insertion. Service is elapsed time since execution
 start, including stalls; it is not pure CPU busy time. Validation rejects invalid ordering,
 nonfinite timestamps, and successful completion without start/finish.
+The collector also checks workload arrival against epoch + trace arrival and requires all observed
+events to fall inside the observation window. Ready entry and CloudSim submission cannot follow
+execution start, including when dispatch is unobserved.
 
 ## Outcomes, latency, and throughput
 
@@ -91,7 +94,11 @@ task has a dispatch measurement; a partially instrumented class gives `N/A`.
 Throughput = completed class tasks / observation-window seconds. Every class uses the same
 window: workload epoch through last successful completion for a fully completed run; otherwise
 through simulation observation end. Idle gaps and the initial wait for arrivals are included,
-VM creation and final shutdown grace time are excluded. A zero-duration window gives `N/A`.
+and VM creation is excluded. Fully completed runs exclude final shutdown grace; incomplete runs
+use the explicit observation end, which the stock controller takes from the final simulation clock.
+A zero-duration window gives `N/A`.
+For an early cutoff, future trace arrivals remain in the observations with unresolved outcomes;
+they have no invented ready/start/finish events and do not contribute to completed-task latency.
 
 ## SLA classification and exact denominators
 
@@ -139,7 +146,13 @@ resource-time accounting and failure-inclusive availability remain future measur
 
 Approved profiles/topology are unchanged. `Calibration.load` copies an existing generation
 configuration and accepts only explicitly named length/target overrides. It preserves class
-mix, seed, count, arrivals, PEs, RAM and infrastructure. Unknown keys, invalid ranges and the
+mix, seed, count and infrastructure. `Calibration.generateTrace(candidate, originalTrace)` copies
+the exact original IDs, classes, arrivals, PEs and RAM demands and samples only changed length ranges
+with a length-only seeded random stream. Unchanged length ranges retain the original sampled work,
+so target-only candidates change targets alone. This avoids rejection sampling of a new length
+range shifting PE/RAM draws. Regenerating a candidate directly with `WorkloadGenerator` preserves
+the configured resource ranges but cannot guarantee identical realized demands; use the calibration
+method for controlled comparisons. Unknown keys, invalid ranges and the
 reserved name `original-stress` are rejected. Multiple candidate files can be compared:
 
 ```powershell
@@ -169,11 +182,11 @@ immutable trace (including generation configuration/seed/arrival sequence), and 
 configuration/topology. For a candidate execution, generate its trace and use:
 
 ```java
-var candidate = Calibration.load(java.nio.file.Path.of("experiments/service-bound-demo.properties"),
-    WorkloadGenerationConfig.defaults(WorkloadScenario.BALANCED));
-var trace = new WorkloadGenerator().generate(candidate.config());
+var original = new WorkloadGenerator().generate(WorkloadGenerationConfig.defaults(WorkloadScenario.BALANCED));
+var candidate = Calibration.load(java.nio.file.Path.of("experiments/service-bound-demo.properties"), original.config());
+var trace = Calibration.generateTrace(candidate, original);
 var metadata = new ExperimentRunner.Metadata(candidate.name(),
-    ExperimentRunner.Purpose.UNAPPROVED_COMPARISON_CANDIDATE, "cloudsim-stock-space-shared",
+    ExperimentRunner.Purpose.UNAPPROVED_COMPARISON_CANDIDATE, ExperimentRunner.STOCK_POLICY,
     trace, SimulationConfig.research(trace));
 var result = new ExperimentRunner().runStock(metadata);
 EvaluationReport.printMetrics(result);
@@ -186,3 +199,5 @@ simulator, hosts, VMs, broker, policies, reservations and Cloudlets. The stock e
 integration tests verify identical observations/metrics and distinct Cloudlet/broker instances
 across repeated runs. Never reuse a mutable executor or Cloudlet. Future dispatch adapters must
 capture real ready/dispatch events and failure/cancellation release behavior before comparisons.
+`runStock` rejects any policy label other than `ExperimentRunner.STOCK_POLICY`; a different policy
+must provide its own executor to `run`. Reporting does not label custom executors as stock brokers.

@@ -142,8 +142,8 @@ CloudSim. `SimulationConfig` defines validated infrastructure capacities and cou
 returns completed Cloudlets with original metadata. `RamAdmissionLedger` defines a later integration
 contract without implementing reservation. Unit/integration tests inspect real resources, arrivals,
 RAM accounting, repeatability and broker results, including long idle gaps and simultaneous arrivals
-with non-sequential task IDs. The Milestone 3A verification run passes all 59 tests, including all
-43 existing tests and 16 new evaluation cases (parameterized invocations included).
+with non-sequential task IDs. The Milestone 3A verification run passes all 66 tests, including all
+43 existing tests and 23 evaluation cases (parameterized invocations included).
 
 ## Team
 

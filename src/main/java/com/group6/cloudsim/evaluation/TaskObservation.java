@@ -21,7 +21,9 @@ public record TaskObservation(TaskMetadata task, Outcome outcome, double workloa
         ordered(OptionalDouble.of(workloadArrival), readyQueueEntry);
         ordered(OptionalDouble.of(workloadArrival), dispatch);
         ordered(readyQueueEntry, dispatch);
+        ordered(readyQueueEntry, executionStart);
         ordered(dispatch, executionStart);
+        ordered(cloudSimSubmission, executionStart);
         ordered(OptionalDouble.of(workloadArrival), executionStart);
         ordered(executionStart, completion);
         if (outcome == Outcome.COMPLETED && (executionStart.isEmpty() || completion.isEmpty()))

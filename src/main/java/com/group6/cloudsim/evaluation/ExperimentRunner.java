@@ -7,6 +7,7 @@ import java.util.function.Supplier;
 
 /** Runs fresh simulation state, with policy execution separate from feasibility/measurement. */
 public final class ExperimentRunner {
+    public static final String STOCK_POLICY = "cloudsim-stock-space-shared";
     public enum Purpose { ORIGINAL_STRESS, UNAPPROVED_COMPARISON_CANDIDATE }
     @FunctionalInterface public interface RunExecutor {
         SimulationController.ObservedRun execute(SimulationConfig config);
@@ -39,6 +40,8 @@ public final class ExperimentRunner {
     }
 
     public Result runStock(Metadata metadata) {
+        if (!STOCK_POLICY.equals(metadata.policyName()))
+            throw new IllegalArgumentException("Stock execution requires policy label " + STOCK_POLICY);
         return run(metadata, () -> new SimulationController()::runObserved);
     }
 }

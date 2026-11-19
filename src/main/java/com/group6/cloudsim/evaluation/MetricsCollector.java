@@ -14,7 +14,7 @@ public final class MetricsCollector {
         int missesAmongFeasible, int unresolvedSlaTasks, OptionalDouble allSlaMissRatio,
         OptionalDouble feasibleSlaMissRatio) {}
 
-    /** Window is [workload epoch, last terminal observation], shared by every workload class. */
+    /** Window starts at the workload epoch; tasks beyond an early cutoff remain unresolved. */
     public Map<WorkloadClass, ClassMetrics> collect(Report feasibility, List<TaskObservation> observations,
                                                  double windowStart, double windowEnd) {
         if (!Double.isFinite(windowStart) || !Double.isFinite(windowEnd) || windowStart < 0 || windowEnd < windowStart)
@@ -22,9 +22,17 @@ public final class MetricsCollector {
         var byId = new HashMap<Long, TaskObservation>();
         for (var observation : observations) {
             if (byId.put(observation.task().id(), observation) != null) throw new IllegalArgumentException("Duplicate observation");
-            if (observation.workloadArrival() < windowStart || observation.workloadArrival() > windowEnd
-                || observation.completion().orElse(windowEnd) > windowEnd)
-                throw new IllegalArgumentException("Observation outside window");
+            double expectedArrival = windowStart + observation.task().arrivalTimeSeconds();
+            if (!Double.isFinite(expectedArrival) || Math.abs(observation.workloadArrival() - expectedArrival) > 1e-8)
+                throw new IllegalArgumentException("Workload arrival must equal epoch plus trace arrival");
+            // Trace arrivals may lie beyond an early cutoff. Actual events must have happened
+            // within the observation window, including events on unsuccessful tasks.
+            for (var timestamp : new OptionalDouble[] {observation.readyQueueEntry(), observation.dispatch(),
+                observation.cloudSimSubmission(), observation.executionStart(), observation.completion()}) {
+                if (timestamp.isPresent() && (timestamp.getAsDouble() < windowStart - 1e-8
+                    || timestamp.getAsDouble() > windowEnd + 1e-8))
+                    throw new IllegalArgumentException("Observed event outside window");
+            }
         }
         if (byId.size() != feasibility.tasks().size()) throw new IllegalArgumentException("Missing/extra observations");
         for (var row : feasibility.tasks()) {

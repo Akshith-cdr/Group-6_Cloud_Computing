@@ -22,7 +22,7 @@ public final class EvaluationReport {
     }
     public static void printMetrics(ExperimentRunner.Result result) {
         var metadata = result.metadata();
-        System.out.printf("Experiment: configuration=%s purpose=%s policy=%s seed=%d window=%.6f..%.6f%n",
+        System.out.printf(Locale.ROOT, "Experiment: configuration=%s purpose=%s policy=%s seed=%d window=%.6f..%.6f%n",
             metadata.configurationName(), metadata.purpose(), metadata.policyName(), metadata.trace().config().seed(),
             result.run().workloadEpoch(), result.run().observationEnd());
         System.out.println("class,completed,failed,cancelled,unfinished,mean_response,median_response,p95,p99,mean_queue_wait,throughput,sla_tasks,intrinsic_infeasible,misses,misses_feasible,unresolved_sla,all_sla_miss_ratio,feasible_sla_miss_ratio");
@@ -34,25 +34,27 @@ public final class EvaluationReport {
                 m.slaTasks(), m.intrinsicallyInfeasible(), m.totalSlaMisses(), m.missesAmongFeasible(), m.unresolvedSlaTasks(),
                 value(m.allSlaMissRatio()), value(m.feasibleSlaMissRatio()));
         }
-        System.out.println("Stock broker: ready/dispatch timestamps and CPU/RAM time averages unavailable; policy comparisons NOT ready.");
+        if (result.run().observations().stream().anyMatch(o -> o.readyQueueEntry().isEmpty() || o.dispatch().isEmpty()))
+            System.out.println("Ready/dispatch timestamps unavailable for some tasks; queue metrics require complete observations.");
+        System.out.println("CPU/RAM time averages unavailable; policy comparisons still require verified admission and instrumentation.");
     }
 
     /** Runs all four scenarios with original stress plus zero or more named candidate property files. */
     public static void main(String[] args) throws Exception {
         for (var scenario : WorkloadScenario.values()) {
             var original = WorkloadGenerationConfig.defaults(scenario);
-            print("original-stress", original);
+            var originalTrace = new WorkloadGenerator().generate(original);
+            print("original-stress", originalTrace);
             var names = new HashSet<String>();
             for (var argument : args) {
                 var candidate = Calibration.load(Path.of(argument), original);
                 if (!names.add(candidate.name())) throw new IllegalArgumentException("Duplicate candidate name: " + candidate.name());
-                print(candidate.name() + " (UNAPPROVED)", candidate.config());
+                print(candidate.name() + " (UNAPPROVED)", Calibration.generateTrace(candidate, originalTrace));
             }
         }
     }
-    private static void print(String name, WorkloadGenerationConfig config) {
-        var trace = new WorkloadGenerator().generate(config);
+    private static void print(String name, WorkloadTrace trace) {
         printFeasibility(name, trace, new SlaFeasibilityAnalyzer().analyze(trace, SimulationConfig.research(trace)));
-        for (var type : WorkloadClass.values()) System.out.println("  " + type + " profile=" + config.profiles().get(type));
+        for (var type : WorkloadClass.values()) System.out.println("  " + type + " profile=" + trace.config().profiles().get(type));
     }
 }

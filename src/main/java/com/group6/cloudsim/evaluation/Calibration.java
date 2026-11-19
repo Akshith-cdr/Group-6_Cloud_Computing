@@ -39,4 +39,32 @@ public final class Calibration {
         return new Candidate(properties.getProperty("name"), new WorkloadGenerationConfig(original.scenario(), original.totalTasks(),
             original.seed(), original.arrivalHorizonSeconds(), original.arrivalRatePerSecond(), profiles));
     }
+
+    /** Calibrates a fixed trace, preserving realized demands rather than just their ranges. */
+    public static WorkloadTrace generateTrace(Candidate candidate, WorkloadTrace original) {
+        var config = candidate.config();
+        var base = original.config();
+        var controls = new WorkloadGenerationConfig(config.scenario(), config.totalTasks(), config.seed(),
+            config.arrivalHorizonSeconds(), config.arrivalRatePerSecond(), base.profiles());
+        if (!controls.equals(base)) throw new IllegalArgumentException("Candidate must retain the source trace controls");
+        for (var type : WorkloadClass.values()) {
+            var p = config.profiles().get(type); var q = base.profiles().get(type);
+            if (p.minPes() != q.minPes() || p.maxPes() != q.maxPes()
+                || p.minRamMb() != q.minRamMb() || p.maxRamMb() != q.maxRamMb())
+                throw new IllegalArgumentException("Candidate must retain PE/RAM profiles");
+        }
+        // Length-only sampling cannot shift PE/RAM draws through Random's rejection sampling.
+        // Unchanged length ranges retain exact original lengths, including target-only candidates.
+        var lengths = new Random(config.seed());
+        var tasks = new ArrayList<TaskMetadata>(original.tasks().size());
+        for (var task : original.tasks()) {
+            var p = config.profiles().get(task.workloadClass());
+            var q = base.profiles().get(task.workloadClass());
+            long length = p.minLengthMiPerPe() == q.minLengthMiPerPe() && p.maxLengthMiPerPe() == q.maxLengthMiPerPe()
+                ? task.lengthMiPerPe() : lengths.nextLong(p.minLengthMiPerPe(), p.maxLengthMiPerPe() + 1);
+            tasks.add(new TaskMetadata(task.id(), task.workloadClass(), task.arrivalTimeSeconds(), length,
+                task.pes(), task.ramDemandMb(), p.responseTimeTargetSeconds(), task.generationSeed()));
+        }
+        return new WorkloadTrace(config, tasks);
+    }
 }

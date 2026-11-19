@@ -14,10 +14,11 @@ No project dependency was added. Exact published CloudSim sources were inspected
 | Check | Result |
 | --- | --- |
 | Existing baseline tests after observation refactor | 43 passed |
-| Final `mvn clean test` | 59 passed, 0 failed/errors/skipped |
-| Evaluation tests | 16 passing invocations; all 43 prior tests preserved |
+| Final `mvn clean test` | 66 passed, 0 failed/errors/skipped |
+| Evaluation tests | 23 passing invocations; all 43 prior tests preserved |
 | Milestone 1 smoke CLI | 3/3 successful; epoch 0.1 s; zero arrival error |
 | Default balanced CLI | 120/120 successful; epoch 0.1 s; zero arrival error |
+| Other three default scenario CLIs | 120/120 successful each; zero arrival error |
 | Feasibility CLI, original profiles | all four scenarios reported below |
 | Feasibility CLI, named alternative | all four scenarios; no intrinsic infeasibility |
 | `git diff --check` | passed |
@@ -145,3 +146,38 @@ Modified `.gitignore`, `README.md`, `src/main/java/com/group6/cloudsim/Main.java
 `src/main/java/com/group6/cloudsim/core/SimulationController.java`, `docs/WORKLOAD_MODEL.md`,
 `docs/MILESTONE_2_VERIFICATION.md`, and `docs/CONTRIBUTION_PLAN.md`.
 Original workload, topology, dependency declarations and existing test files are unchanged.
+
+## Follow-up review on 19 November 2026
+
+Seven regression tests were added in
+`src/test/java/com/group6/cloudsim/evaluation/EvaluationReviewTest.java`. They reproduced gaps in
+the first PR revision: an incorrect workload clock was accepted, unfinished future arrivals were
+rejected at an early cutoff, events after the cutoff were accepted on unfinished tasks, ready/API
+submission timestamps could follow execution when dispatch was unknown, and a stock run could
+carry another policy's label. The collector/observation validation and stock-run guard now reject
+those invalid cases while preserving unresolved future arrivals.
+
+The review also reproduced a calibration problem with a wide candidate length range: rejection
+sampling changed a later RAM demand from 293 to 412 MB. The original generator and approved
+profiles remain untouched. Instead, `Calibration.generateTrace` copies exact original task controls
+and resource demands and samples changed length ranges separately. CLI and documented candidate
+execution now use this path. Tests verify deterministic calibration, retained PE/RAM/arrival samples,
+unchanged work for target-only calibration and rejection of mismatched source controls.
+
+The final test run passes 66 tests. Smoke and all four default CLIs complete with zero arrival
+error. A single feasibility invocation compares both `service-bound-demo-unapproved` and a temporary
+target-only candidate (10 s interactive / 50 s inference, derived from original maximum work / VM
+capacity) across all four scenarios. Both have 100% intrinsic feasibility for SLA tasks. The original
+feasibility counts and balanced measured results above remain unchanged. The temporary file is
+ignored under `.tools/target-candidate.properties`; reproduce its comparison with:
+
+```powershell
+@('name=target-demo-unapproved','INTERACTIVE.slaSeconds=10','AI_INFERENCE.slaSeconds=50') |
+    Set-Content "$env:TEMP\group6-target-candidate.properties"
+mvn exec:java "-Dexec.args=--feasibility experiments/service-bound-demo.properties $env:TEMP/group6-target-candidate.properties"
+```
+
+If the temporary directory contains spaces, place the candidate under a path without spaces for
+this Maven argument example. Both candidates remain unapproved examples. GitHub reports no merge
+conflict on PR #4; no remote CI checks or reviews are configured/reported at this time. Local checks
+do not resolve the missing dispatch/admission framework, so the PR remains a draft.

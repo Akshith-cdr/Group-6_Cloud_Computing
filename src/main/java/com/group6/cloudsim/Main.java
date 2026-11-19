@@ -48,7 +48,7 @@ public final class Main {
             results = new SimulationController().run(simulationConfig);
         } else {
             var metadata = new ExperimentRunner.Metadata("original-stress", ExperimentRunner.Purpose.ORIGINAL_STRESS,
-                "cloudsim-stock-space-shared", researchTrace, simulationConfig);
+                ExperimentRunner.STOCK_POLICY, researchTrace, simulationConfig);
             var experiment = new ExperimentRunner().runStock(metadata);
             EvaluationReport.printFeasibility(metadata.configurationName(), researchTrace, experiment.feasibility());
             EvaluationReport.printMetrics(experiment);
