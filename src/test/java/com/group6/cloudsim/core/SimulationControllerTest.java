@@ -46,7 +46,9 @@ class SimulationControllerTest {
             assertEquals(task.id(), cloudlet.getId());
             assertEquals(task.lengthMiPerPe(), cloudlet.getLength());
             assertEquals(task.pes(), cloudlet.getPesNumber());
-            assertEquals(task.ramFraction(), cloudlet.getUtilizationModelRam().getUtilization(0));
+            assertEquals(org.cloudsimplus.utilizationmodels.UtilizationModel.Unit.ABSOLUTE,
+                cloudlet.getUtilizationModelRam().getUnit());
+            assertEquals(task.ramDemandMb(), cloudlet.getUtilizationModelRam().getUtilization(0));
             assertTrue(cloudlet.getStartTime() >= 0);
             assertTrue(cloudlet.getFinishTime() > cloudlet.getStartTime());
             assertTrue(simulation.clock() >= cloudlet.getFinishTime());
