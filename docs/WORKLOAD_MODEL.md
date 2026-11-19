@@ -194,8 +194,24 @@ var results = new SimulationController().run(SimulationConfig.research(trace));
 ```
 
 The relevant types are in `com.group6.cloudsim.workload` and `com.group6.cloudsim.core`.
-No baseline policy, fairness/latency algorithm, experiment matrix or final metrics module is added.
+No baseline policy or fairness/latency algorithm is added. Milestone 3A evaluation modules and
+their measurement limits are documented in [EXPERIMENT_METRICS.md](EXPERIMENT_METRICS.md).
 See [verification results](MILESTONE_2_VERIFICATION.md) for the actual executed runs.
+
+## Milestone 3A stress profiles and calibration
+
+The approved profiles above remain the original stress configuration. At 1,000 MIPS/PE,
+interactive work above 5,000 MI/PE and inference work above 10,000 MI/PE already exceed their
+5/10-second targets without any queueing. PE count scales total work and total assigned capacity
+together; it does not divide per-PE service time. Batch tasks have no response-time SLA.
+
+Run `mvn exec:java '-Dexec.args=--feasibility'` for per-class/task-derived feasibility in every scenario.
+Supply one or more candidate property files after `--feasibility` to compare explicit named
+alternatives. `experiments/service-bound-demo.properties` is an unapproved mathematical example,
+not a selected comparison workload. `Calibration` copies configuration/profile maps and changes only
+explicit length/target fields. Seed, arrivals, class mix, PEs, RAM and topology remain fixed.
+Candidate run metadata must retain the candidate name and `UNAPPROVED_COMPARISON_CANDIDATE` purpose;
+stress runs use `original-stress` and `ORIGINAL_STRESS`. No approved comparison values are selected here.
 
 ## Exact-version references
 

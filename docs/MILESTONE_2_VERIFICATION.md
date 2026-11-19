@@ -1,5 +1,12 @@
 # Milestone 2 verification and review handoff
 
+Historical Milestone 2 report follows. For the current branch, see
+[Milestone 3A verification](MILESTONE_3A_VERIFICATION.md) and the
+[metric contract and readiness limitations](EXPERIMENT_METRICS.md). The current repository baseline
+has 43 tests; the 53-test local dispatch framework mentioned in the new prompt is not committed
+to any of the available remote branches. Historical branch/head statements below describe that
+earlier session, not the current checkout.
+
 Reverified locally on 19 November 2026. Branch: `feature/naveen-workloads`.
 The session began on `main` and switched to the existing feature branch before making changes.
 That branch already contained the Milestone 2 implementation in commit `6f8c218`, tracking
