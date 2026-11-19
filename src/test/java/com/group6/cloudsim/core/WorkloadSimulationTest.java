@@ -65,6 +65,46 @@ class WorkloadSimulationTest {
     }
 
     @Test
+    void pendingArrivalsSurviveLongIdleGaps() {
+        var tasks = List.of(
+            new TaskMetadata(7, WorkloadClass.INTERACTIVE, 0, 2_000, 1, 512, OptionalDouble.of(5), 42),
+            new TaskMetadata(3, WorkloadClass.INTERACTIVE, 100, 2_000, 1, 512, OptionalDouble.of(5), 42),
+            new TaskMetadata(11, WorkloadClass.INTERACTIVE, 1_000, 2_000, 1, 512, OptionalDouble.of(5), 42));
+        var smoke = SimulationConfig.milestoneOne();
+        var results = new SimulationController().run(new SimulationConfig(smoke.host(), smoke.vm(), tasks));
+
+        assertEquals(3, results.size());
+        for (var task : tasks) {
+            var result = results.stream().filter(item -> item.metadata().id() == task.id()).findFirst().orElseThrow();
+            assertSame(task, result.metadata());
+            assertEquals(result.expectedDatacenterArrivalSeconds(), result.cloudlet().getDcArrivalTime(), 1e-8);
+            assertEquals(result.expectedDatacenterArrivalSeconds(), result.cloudlet().getStartTime(), 1e-8);
+            assertEquals(Cloudlet.Status.SUCCESS, result.cloudlet().getStatus());
+        }
+    }
+
+    @Test
+    void simultaneousArrivalsPreserveMetadataByIdAndLengthPerPe() {
+        // Deliberately use IDs unrelated to list positions, with all three classes arriving together.
+        var tasks = List.of(
+            new TaskMetadata(90, WorkloadClass.BATCH, 2.5, 40_000, 1, 1_024, OptionalDouble.empty(), 42),
+            new TaskMetadata(2, WorkloadClass.INTERACTIVE, 2.5, 2_000, 1, 512, OptionalDouble.of(5), 42),
+            new TaskMetadata(40, WorkloadClass.AI_INFERENCE, 2.5, 12_000, 2, 1_536, OptionalDouble.of(10), 42));
+        var smoke = SimulationConfig.milestoneOne();
+        var results = new SimulationController().run(new SimulationConfig(smoke.host(), smoke.vm(), tasks));
+
+        assertEquals(List.of(2L, 40L, 90L), results.stream().map(result -> result.metadata().id()).toList());
+        for (var result : results) {
+            var task = tasks.stream().filter(item -> item.id() == result.cloudlet().getId()).findFirst().orElseThrow();
+            assertSame(task, result.metadata());
+            assertEquals(result.expectedDatacenterArrivalSeconds(), result.cloudlet().getDcArrivalTime(), 1e-8);
+            assertEquals(result.expectedDatacenterArrivalSeconds(), result.cloudlet().getStartTime(), 1e-8);
+            assertEquals(task.lengthMiPerPe(), result.cloudlet().getLength());
+            assertEquals(task.lengthMiPerPe() * task.pes(), result.cloudlet().getTotalLength());
+        }
+    }
+
+    @Test
     void traceCanBeReusedForFreshCloudletsAndRepeatableExecution() {
         var trace = new WorkloadGenerator().generate(new WorkloadGenerationConfig(WorkloadScenario.BALANCED, 12, 42,
             600, 0.5, WorkloadGenerationConfig.defaultProfiles()));

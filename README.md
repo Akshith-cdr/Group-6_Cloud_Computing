@@ -126,7 +126,8 @@ CloudSim. `SimulationConfig` defines validated infrastructure capacities and cou
 `SimulationController` owns a fresh simulator/broker, records the VM-ready workload epoch and
 returns completed Cloudlets with original metadata. `RamAdmissionLedger` defines a later integration
 contract without implementing reservation. Unit/integration tests inspect real resources, arrivals,
-RAM accounting, repeatability and broker results.
+RAM accounting, repeatability and broker results, including long idle gaps and simultaneous arrivals
+with non-sequential task IDs. The current verification run passes all 43 tests.
 
 ## Team
 

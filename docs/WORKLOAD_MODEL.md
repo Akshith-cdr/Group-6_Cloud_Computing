@@ -100,6 +100,9 @@ Integration tests compare `getDcArrivalTime()` against the equation for every ta
 arrivals. A contention test verifies that queueing changes start time without changing arrival time.
 Repeated runs create different Cloudlet instances with identical timings. If future integration adds
 VM boot delays or a network topology, revalidate this contract: the broker can add those delays.
+Additional execution tests cover arrivals separated by long idle gaps (0, 100 and 1,000 seconds)
+and simultaneous arrivals with non-sequential IDs. They verify delayed tasks still complete, original
+metadata is associated by ID, and two-PE Cloudlets retain the per-PE length convention.
 
 ## RAM utilization and reservation limitations
 
