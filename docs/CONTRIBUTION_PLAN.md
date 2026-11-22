@@ -22,6 +22,13 @@ Akshith coordinates integration and validates the full simulation. Naveen docume
 
 ## GitHub workflow
 
+Milestone 3A uses `feature/aswarth-m3a-evaluation` for Aswarth's feasibility analyzer, metric contract,
+calibration, experiment-runner preparation, tests and reporting. Approved workload profiles and
+topology stay unchanged; baseline scheduling algorithms remain deferred. Integration must supply
+the missing arrival-driven dispatch framework and ready/dispatch timestamps before policy comparison.
+The PR includes that limitation and current verification results; it must not be treated as approval
+of the illustrative calibration candidate. See [EXPERIMENT_METRICS.md](EXPERIMENT_METRICS.md).
+
 1. Keep the repository private. Each member uses their own GitHub account and Git identity.
 2. Start a focused branch from current `main`. Use the recommended branches for the initial workstreams.
 3. Implement and test meaningful changes independently. Each member makes and pushes their own commits under their own identity. Commit and review activity should reflect the work each person actually performed.

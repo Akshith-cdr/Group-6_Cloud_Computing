@@ -2,6 +2,7 @@ package com.group6.cloudsim;
 
 import com.group6.cloudsim.core.SimulationConfig;
 import com.group6.cloudsim.core.SimulationController;
+import com.group6.cloudsim.evaluation.*;
 import com.group6.cloudsim.workload.WorkloadClass;
 import com.group6.cloudsim.workload.WorkloadGenerationConfig;
 import com.group6.cloudsim.workload.WorkloadGenerator;
@@ -14,7 +15,13 @@ public final class Main {
     private Main() {}
 
     public static void main(String[] args) {
+        if (args.length > 0 && args[0].equals("--feasibility")) {
+            try { EvaluationReport.main(java.util.Arrays.copyOfRange(args, 1, args.length)); }
+            catch (Exception e) { throw new IllegalArgumentException("Feasibility analysis failed", e); }
+            return;
+        }
         SimulationConfig simulationConfig;
+        WorkloadTrace researchTrace = null;
         if (args.length == 1 && args[0].equals("--smoke")) {
             simulationConfig = SimulationConfig.milestoneOne();
             System.out.println("Milestone 1 smoke scenario");
@@ -34,8 +41,19 @@ public final class Main {
             printSummary(trace);
             System.out.println("Same-seed trace reproduction: PASS");
             simulationConfig = SimulationConfig.research(trace);
+            researchTrace = trace;
         }
-        var results = new SimulationController().run(simulationConfig);
+        java.util.List<SimulationController.CompletedTask> results;
+        if (researchTrace == null) {
+            results = new SimulationController().run(simulationConfig);
+        } else {
+            var metadata = new ExperimentRunner.Metadata("original-stress", ExperimentRunner.Purpose.ORIGINAL_STRESS,
+                ExperimentRunner.STOCK_POLICY, researchTrace, simulationConfig);
+            var experiment = new ExperimentRunner().runStock(metadata);
+            EvaluationReport.printFeasibility(metadata.configurationName(), researchTrace, experiment.feasibility());
+            EvaluationReport.printMetrics(experiment);
+            results = experiment.run().completed();
+        }
         if (!results.isEmpty()) {
             System.out.printf(Locale.ROOT, "%nWorkload epoch (simulation seconds): %.6f%n", results.get(0).workloadEpochSeconds());
             double maxError = results.stream().mapToDouble(result -> Math.abs(

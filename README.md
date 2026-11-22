@@ -10,6 +10,13 @@ The project will evaluate Workload-Aware Weighted Multi-Resource Fairness with L
 
 ## Milestone 2: reproducible workloads
 
+Milestone 3A adds deterministic SLA feasibility analysis, named calibration candidates, a centralized
+[metric contract](docs/EXPERIMENT_METRICS.md), outcome-aware metrics and a fresh-state experiment runner.
+The dispatch framework described in the milestone prompt was local/uncommitted and is absent from
+all available remote branches. Ready/dispatch timings and time-average CPU/RAM utilization remain
+unavailable; **policy comparisons are not ready**. See the
+[Milestone 3A verification report](docs/MILESTONE_3A_VERIFICATION.md) for results and remaining work.
+
 The default application now generates and runs a 120-task balanced research workload using seed 42,
 a rate of 0.5 tasks/second and a 600-second arrival horizon. The research topology has three
 four-PE hosts and six two-PE VMs, each at 1,000 MIPS per PE. Hosts have 16,384 MB RAM; VMs have
@@ -47,11 +54,15 @@ mvn exec:java '-Dexec.args=INTERACTIVE_HEAVY 120 42 600 0.5'
 mvn exec:java '-Dexec.args=INFERENCE_HEAVY 120 42 600 0.5'
 mvn exec:java '-Dexec.args=BALANCED 120 42 600 0.5'
 mvn exec:java '-Dexec.args=--smoke'
+mvn exec:java '-Dexec.args=--feasibility'
+mvn exec:java '-Dexec.args=--feasibility experiments/service-bound-demo.properties'
 ```
 
 Arguments are scenario, task count, seed, horizon seconds and rate tasks/second, with defaults for
 omitted trailing arguments. Custom profiles and infrastructure capacities are Java configuration
-inputs. No scheduling baseline, WMRF-LG, final metrics or experiment matrix is implemented here.
+inputs. No scheduling baseline or WMRF-LG is implemented. Research runs now report feasibility and
+measured completion metrics; missing measurements display `N/A`. Calibration candidates are explicit,
+unapproved comparisons and never replace approved stress defaults automatically.
 
 ## Preserved Milestone 1 smoke scenario
 
@@ -102,6 +113,8 @@ pom.xml
 README.md
 docs/
   CONTRIBUTION_PLAN.md
+  EXPERIMENT_METRICS.md
+  MILESTONE_3A_VERIFICATION.md
   WORKLOAD_MODEL.md
   MILESTONE_2_VERIFICATION.md
 src/
@@ -109,6 +122,8 @@ src/
     Main.java
     core/             SimulationConfig, SimulationController
     datacenter/       DatacenterFactory
+    evaluation/       SlaFeasibilityAnalyzer, TaskObservation, MetricsCollector
+                      Calibration, ExperimentRunner, EvaluationReport
     workload/         CloudletFactory, TaskMetadata, WorkloadClass
                       WorkloadProfile, WorkloadScenario, WorkloadGenerationConfig
                       WorkloadGenerator, WorkloadTrace, WorkloadValidator, RamAdmissionLedger
@@ -127,7 +142,8 @@ CloudSim. `SimulationConfig` defines validated infrastructure capacities and cou
 returns completed Cloudlets with original metadata. `RamAdmissionLedger` defines a later integration
 contract without implementing reservation. Unit/integration tests inspect real resources, arrivals,
 RAM accounting, repeatability and broker results, including long idle gaps and simultaneous arrivals
-with non-sequential task IDs. The current verification run passes all 43 tests.
+with non-sequential task IDs. The Milestone 3A verification run passes all 66 tests, including all
+43 existing tests and 23 evaluation cases (parameterized invocations included).
 
 ## Team
 
