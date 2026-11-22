@@ -12,11 +12,20 @@ public final class MetricsCollector {
         OptionalDouble p99Response, OptionalDouble averageQueueWait, OptionalDouble throughput,
         int slaTasks, int intrinsicallyFeasible, int intrinsicallyInfeasible, int totalSlaMisses,
         int missesAmongFeasible, int unresolvedSlaTasks, OptionalDouble allSlaMissRatio,
-        OptionalDouble feasibleSlaMissRatio) {}
+        OptionalDouble feasibleSlaMissRatio, OptionalDouble maximumQueueWait) {}
+
+    public record Summary(Map<WorkloadClass, ClassMetrics> byClass, ClassMetrics aggregate,
+                          OptionalDouble batchMakespan) {
+        public Summary { byClass = Map.copyOf(byClass); }
+    }
 
     /** Window starts at the workload epoch; tasks beyond an early cutoff remain unresolved. */
     public Map<WorkloadClass, ClassMetrics> collect(Report feasibility, List<TaskObservation> observations,
                                                  double windowStart, double windowEnd) {
+        return summarize(feasibility, observations, windowStart, windowEnd).byClass();
+    }
+
+    public Summary summarize(Report feasibility, List<TaskObservation> observations, double windowStart, double windowEnd) {
         if (!Double.isFinite(windowStart) || !Double.isFinite(windowEnd) || windowStart < 0 || windowEnd < windowStart)
             throw new IllegalArgumentException("Invalid observation window");
         var byId = new HashMap<Long, TaskObservation>();
@@ -40,32 +49,45 @@ public final class MetricsCollector {
             if (observation == null || !row.task().equals(observation.task())) throw new IllegalArgumentException("Trace mismatch");
         }
         var result = new EnumMap<WorkloadClass, ClassMetrics>(WorkloadClass.class);
+        double duration = windowEnd - windowStart;
         for (var type : WorkloadClass.values()) {
             var rows = feasibility.tasks().stream().filter(r -> r.task().workloadClass() == type).toList();
-            var group = rows.stream().map(r -> byId.get(r.task().id())).toList();
-            var completed = group.stream().filter(o -> o.outcome() == COMPLETED).toList();
-            var responses = completed.stream().mapToDouble(o -> o.responseTime().orElseThrow()).sorted().toArray();
-            int misses = 0, beyondLowerBound = 0, unresolved = 0;
-            for (var row : rows) {
-                if (row.classification() == Classification.NO_SLA) continue;
-                var observation = byId.get(row.task().id());
-                if (observation.outcome() != COMPLETED) { unresolved++; continue; }
-                if (observation.responseTime().orElseThrow() > row.task().responseTimeTargetSeconds().orElseThrow()) {
-                    misses++;
-                    if (row.classification() == Classification.INTRINSICALLY_FEASIBLE) beyondLowerBound++;
-                }
-            }
-            var bounds = feasibility.byClass().get(type);
-            // A partial set of dispatch observations must not be mislabeled as a class average.
-            var queueAverage = completed.isEmpty() || completed.stream().anyMatch(o -> o.queueWaitTime().isEmpty())
-                ? OptionalDouble.empty() : completed.stream().mapToDouble(o -> o.queueWaitTime().orElseThrow()).average();
-            result.put(type, new ClassMetrics(completed.size(), count(group, FAILED), count(group, CANCELLED), count(group, UNFINISHED),
-                Arrays.stream(responses).average(), median(responses), percentile(responses, .95), percentile(responses, .99),
-                queueAverage, windowEnd == windowStart ? OptionalDouble.empty() : OptionalDouble.of(completed.size() / (windowEnd-windowStart)),
-                bounds.slaTasks(), bounds.feasibleTasks(), bounds.infeasibleTasks(), misses, beyondLowerBound, unresolved,
-                ratio(misses, bounds.slaTasks()), ratio(beyondLowerBound, bounds.feasibleTasks())));
+            result.put(type, compute(rows, byId, duration));
         }
-        return Map.copyOf(result);
+        var batch = observations.stream().filter(o -> o.task().workloadClass() == WorkloadClass.BATCH).toList();
+        var makespan = batch.isEmpty() || batch.stream().anyMatch(o -> o.outcome() != COMPLETED) ? OptionalDouble.empty()
+            : OptionalDouble.of(batch.stream().mapToDouble(o -> o.completion().orElseThrow()).max().orElseThrow()
+                - batch.stream().mapToDouble(TaskObservation::workloadArrival).min().orElseThrow());
+        return new Summary(result, compute(feasibility.tasks(), byId, duration), makespan);
+    }
+
+    private static ClassMetrics compute(List<TaskFeasibility> rows, Map<Long, TaskObservation> byId, double duration) {
+        var group = rows.stream().map(r -> byId.get(r.task().id())).toList();
+        var completed = group.stream().filter(o -> o.outcome() == COMPLETED).toList();
+        var responses = completed.stream().mapToDouble(o -> o.responseTime().orElseThrow()).sorted().toArray();
+        int misses = 0, beyondLowerBound = 0, unresolved = 0, feasible = 0, infeasible = 0;
+        for (var row : rows) {
+            if (row.classification() == Classification.NO_SLA) continue;
+            boolean withinBound = row.classification() == Classification.INTRINSICALLY_FEASIBLE;
+            if (withinBound) feasible++;
+            else infeasible++;
+            var observation = byId.get(row.task().id());
+            if (observation.outcome() != COMPLETED) { unresolved++; continue; }
+            // Compare timestamps on the same clock so subtraction cannot push an exact deadline over the target.
+            double deadline = observation.workloadArrival() + row.task().responseTimeTargetSeconds().orElseThrow();
+            if (observation.completion().orElseThrow() > deadline) {
+                misses++;
+                if (withinBound) beyondLowerBound++;
+            }
+        }
+        // A partial set of dispatch observations must not be mislabeled as a class average.
+        double[] queueWaits = completed.stream().anyMatch(o -> o.queueWaitTime().isEmpty())
+            ? new double[0] : completed.stream().mapToDouble(o -> o.queueWaitTime().orElseThrow()).toArray();
+        return new ClassMetrics(completed.size(), count(group, FAILED), count(group, CANCELLED), count(group, UNFINISHED),
+            Arrays.stream(responses).average(), median(responses), percentile(responses, .95), percentile(responses, .99),
+            Arrays.stream(queueWaits).average(), duration == 0 ? OptionalDouble.empty() : OptionalDouble.of(completed.size() / duration),
+            feasible + infeasible, feasible, infeasible, misses, beyondLowerBound, unresolved,
+            ratio(misses, feasible + infeasible), ratio(beyondLowerBound, feasible), Arrays.stream(queueWaits).max());
     }
 
     private static int count(List<TaskObservation> group, TaskObservation.Outcome outcome) {

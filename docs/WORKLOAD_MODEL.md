@@ -70,7 +70,7 @@ configuration. Keep the complete configuration and generator version when sharin
 a seed alone does not describe an experiment. Every simulation constructs fresh mutable Cloudlets
 from the same immutable records, allowing future scheduling policies to consume identical inputs.
 
-## CloudSim Plus 8.5.7 arrival integration
+## CloudSim Plus 8.5.7 stock arrival integration
 
 The trace uses a **workload clock**, whose zero is the instant all configured VMs have been created.
 This separates infrastructure initialization from the arrival process, including arrivals at time zero.
@@ -104,7 +104,7 @@ Additional execution tests cover arrivals separated by long idle gaps (0, 100 an
 and simultaneous arrivals with non-sequential IDs. They verify delayed tasks still complete, original
 metadata is associated by ID, and two-PE Cloudlets retain the per-PE length convention.
 
-## RAM utilization and reservation limitations
+## RAM modeling and WMRF-LG admission
 
 Cloudlets have a separate RAM utilization model; their default RAM model is NULL.
 `CloudletFactory` explicitly installs
@@ -117,19 +117,17 @@ tasks requesting 1,536 + 512 MB on a 4,096-MB VM and observe 0.5 requested utili
 allocated during processing. VM creation initially allocates its full configured capacity; that
 initial infrastructure allocation must not be mistaken for active task demand.
 
-**This is not an independent hard memory reservation.** The chosen space-shared Cloudlet scheduler
-checks free CPU PEs for admission. Another test shows two one-PE tasks requesting 3,072 MB each can
-both enter execution on a two-PE, 4,096-MB VM. Requested utilization is 1.5 even though physical
-allocation is capped. CloudSim can apply its simplified virtual-memory/swap behavior when demand
-exceeds available RAM. Therefore concurrency, completion times and throughput may reflect that
-built-in behavior; they do not demonstrate a RAM-constrained admission policy.
+On the stock path, the space-shared Cloudlet scheduler checks free CPU PEs for admission. A test
+shows two one-PE tasks requesting 3,072 MB each can both start on a two-PE, 4,096-MB VM. Requested
+utilization is 1.5 and physical allocation is capped. CloudSim's simplified virtual-memory/swap
+behavior can affect stock concurrency, completion times and throughput when demand exceeds VM RAM.
 
-Task feasibility validation rejects a single task larger than its VM. Host VM placement reserves
-VM RAM within host capacity. Neither check guarantees that the sum of concurrently executing task
-RAM demands fits the VM. `RamAdmissionLedger` is a scheduler-independent extension contract
-(`tryReserve(vmId, vmCapacityMb, task)` / `release(vmId, taskId)`) for a later implementation. Future
-integration must atomically reserve metadata MB before dispatch and release on completion/cancellation.
-No ledger implementation or WMRF-LG reservation algorithm is installed here.
+Task feasibility validation rejects a single task larger than its VM, and host placement reserves
+each VM's capacity. WMRF-LG additionally uses `VmReservations` to atomically reserve task PEs and RAM
+on one VM when the broker dispatches a ready task. The ledger releases both dimensions after
+completion, failure or cancellation. The earlier RAM-only extension interface remains in the source;
+the dispatched path uses the combined ledger because admission must be atomic across both resources.
+WMRF-LG reports elapsed-time reservation occupancy for both resources.
 
 Milestone 1's fractional demands have been converted to nearest integer MB on its original 4,096-MB
 VM: 15% → 614 MB, 10% → 410 MB, 55% → 2,253 MB. Its lengths, PEs, capacities, three-task completion
@@ -194,9 +192,10 @@ var results = new SimulationController().run(SimulationConfig.research(trace));
 ```
 
 The relevant types are in `com.group6.cloudsim.workload` and `com.group6.cloudsim.core`.
-No baseline policy or fairness/latency algorithm is added. Milestone 3A evaluation modules and
-their measurement limits are documented in [EXPERIMENT_METRICS.md](EXPERIMENT_METRICS.md).
-See [verification results](MILESTONE_2_VERIFICATION.md) for the actual executed runs.
+For WMRF-LG, the broker enqueues only at epoch plus trace arrival. It may dispatch later if no VM
+has both resources free. The CloudSim datacenter receives the Cloudlet at dispatch in the current
+zero-transfer-delay topology. See the [WMRF-LG design](WMRF_LG_DESIGN.md) for the experiment
+command and the [metric contract](EXPERIMENT_METRICS.md) for timestamps and measurement limits.
 
 ## Milestone 3A stress profiles and calibration
 

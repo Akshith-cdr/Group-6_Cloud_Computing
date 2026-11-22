@@ -1,17 +1,11 @@
-# Milestone 3A metric contract and readiness
+# Experiment metric contract
 
-## Status and prerequisite audit
+## Execution paths
 
-This checkout is based on `main` commit `160faf9`. All three remote branches were inspected.
-The prompt's local, uncommitted arrival-driven framework is not in any of them:
-`DispatchBroker`, `DispatchPolicy`, `DispatchCloudletScheduler`, and `VmReservations` are absent.
-The actual baseline has 43 tests, a `DatacenterBrokerSimple`, and an interface-only RAM ledger.
-This change adds verified feasibility and metric definitions without reconstructing that missing
-framework or implementing FCFS, priority, weighted DRF, or WMRF-LG.
-
-**Policy comparisons are not ready.** Ready-entry/dispatch instrumentation and enforced concurrent
-RAM admission still require the arrival-driven integration. CPU and RAM time averages are also
-unavailable. The stock execution path reports these limitations rather than substituting timestamps.
+The stock path retains the Milestone 3A completion and feasibility metrics. WMRF-LG, FCFS,
+Strict Priority and Weighted DRF use the same collector and arrival-driven broker, with observed arrivals and dispatches,
+atomic CPU/RAM reservations, elapsed-time occupancy and Jain fairness.
+See the [Milestone 3A audit](MILESTONE_3A_AUDIT.md).
 
 ## CPU lower bound
 
@@ -52,16 +46,14 @@ arrival relative to the workload epoch, which is measured when all configured VM
 | Workload arrival | measured workload epoch + `TaskMetadata.arrivalTimeSeconds()` |
 | Ready-queue entry | actual arrival-driven queue insertion; absent in stock broker |
 | Dispatch | actual policy commitment/admission to a VM; absent in stock broker |
-| CloudSim submission | clock at the actual `broker.submitCloudletList` call; currently the epoch, including future tasks |
+| CloudSim submission | clock at the actual `broker.submitCloudletList` call, at the epoch on stock and at dispatch for the dispatched policies |
 | Execution start | `Cloudlet.getStartTime()`, absent when its value is unassigned |
 | Completion | `Cloudlet.getFinishTime()` only when status is `SUCCESS` |
 
-`getDcArrivalTime()` is the separate datacenter-receipt timestamp, already checked by existing tests
-against epoch + trace arrival. It must not replace workload arrival or policy dispatch. In
-`DatacenterBrokerAbstract.createWaitingCloudlets`, VM mapping happens in advance and
-`CLOUDLET_SUBMIT` is sent with a future submission delay. Neither the submission API time nor
-datacenter receipt is an arrival-driven dispatch event. Unknown timestamps use empty
-`OptionalDouble`; CLI fields display `N/A`, never a fabricated zero.
+`getDcArrivalTime()` records datacenter receipt. Stock sends `CLOUDLET_SUBMIT` with a future
+submission delay; the dispatched path binds and submits the Cloudlet only after the ledger commits
+both resources. Dispatch and datacenter receipt coincide in the current zero-transfer-delay
+configuration. Unknown timestamps use empty `OptionalDouble`; the CLI displays `N/A`.
 
 ```text
 responseTime = completion - workloadArrival
@@ -88,14 +80,19 @@ successful completion timestamp. Legacy `run` still requires every task to succe
 For each class, completed/failed/cancelled/unfinished counts are disjoint. All response-time
 statistics use completed tasks only. Mean is the arithmetic mean; median averages the two middle
 values for even populations; P95/P99 use nearest rank `ceil(p*n)` in sorted observations. No
-completed tasks gives `N/A`. Average queue wait uses all completed tasks only if every completed
-task has a dispatch measurement; a partially instrumented class gives `N/A`.
+completed tasks gives `N/A`. Mean and maximum queue wait use the same completed-task cohort
+and require every completed task in it to have a dispatch measurement. Empty or partially
+instrumented cohorts give `N/A`. The maximum is the largest dispatch-minus-arrival value.
+Batch rows also retain completed and unfinished task counts. The aggregate
+row pools observations across classes before calculating latency and SLA statistics.
+Batch makespan is latest batch completion minus earliest batch arrival, available when at least
+one batch task exists and every batch task completed.
 
 Throughput = completed class tasks / observation-window seconds. Every class uses the same
-window: workload epoch through last successful completion for a fully completed run; otherwise
-through simulation observation end. Idle gaps and the initial wait for arrivals are included,
-and VM creation is excluded. Fully completed runs exclude final shutdown grace; incomplete runs
-use the explicit observation end, which the stock controller takes from the final simulation clock.
+window: workload epoch through last successful completion for a fully completed run. A resolved
+dispatched run with failures or cancellations ends at the last release. Runs with unfinished tasks
+use the final simulation clock, which is also the stock fallback for unsuccessful runs.
+The window includes initial and intervening idle time and excludes VM creation.
 A zero-duration window gives `N/A`.
 For an early cutoff, future trace arrivals remain in the observations with unresolved outcomes;
 they have no invented ready/start/finish events and do not contribute to completed-task latency.
@@ -107,7 +104,8 @@ inference defaults to 10 s. For SLA-bearing tasks:
 
 * Intrinsically feasible: CPU lower bound <= target.
 * Intrinsically infeasible: CPU lower bound > target.
-* Measured miss: successfully completed response time > target.
+* Measured miss: successful finish after the absolute deadline `workloadArrival + target`.
+  Comparing timestamps avoids subtractive rounding at an exact deadline.
 * Potentially avoidable miss: a measured miss in an intrinsically feasible task. This is a miss
   beyond the ideal service-time lower bound, not proof of exclusive scheduler causation.
 
@@ -125,7 +123,7 @@ When unresolved > 0 they are partial observations and must never be read as fina
 An empty denominator is `N/A`. Duplicate/missing/extra observations and mismatched task metadata
 are rejected rather than silently improving results.
 
-## Infrastructure utilization investigation
+## Reservation occupancy and fairness
 
 Exact-source inspection found `Vm.enableUtilizationStats()`, `getCpuUtilizationStats()`, VM state
 history, host processing updates and CloudSim event listeners. `ResourceStats.add(time)` feeds
@@ -135,12 +133,27 @@ VM state history contains time, allocated/requested MIPS and migration status, n
 reservations. Current RAM getters describe requested demand or allocated memory; these differ,
 particularly when requests exceed VM RAM (covered by existing `RamModelTest`).
 
-A later validated observer must integrate `sum(u_i * (t_next - t_i)) / windowDuration` across
-all state changes, including idle periods and the final boundary. Aggregate CPU should weight
-VMs by MIPS capacity; aggregate RAM should weight by RAM capacity. Requested demand, allocated
-memory and reservation occupancy require separate labels. No time-average CPU/RAM metric is
-published here, and no single instantaneous snapshot is labeled an average. Jain fairness,
-resource-time accounting and failure-inclusive availability remain future measurements.
+The dispatched policies integrate task PE and RAM MB reservations over the same run interval
+used for throughput. Total VM PEs and total VM RAM normalize their capacity-time denominators.
+The VMs have identical MIPS per PE. Idle periods contribute zero service over elapsed time.
+Summing each class's share gives aggregate occupancy. This measures reserved capacity, which
+includes time held before execution and release. The stock path leaves time averages unavailable.
+
+For each class with at least one arrival within the measurement window, set
+`x_c = max(class PE share, class RAM share) / entitlement(c)`.
+Jain's index is `(sum x_c)^2 / (number of arrived classes * sum x_c^2)`. An arrived class
+without service contributes zero. An absent class is excluded. All-zero or invalid inputs
+yield `N/A`. The metric compares normalized service and reflects differences in eligible demand.
+All four dispatched policies use the same entitlement defaults of 0.30 batch, 0.35
+interactive and 0.35 inference. Use the same `--config` when changing the fairness reference.
+FCFS and Strict Priority use weights only for reporting. Weighted DRF dispatches using
+current reservations, and uses the same full-run reservation integrals for reporting.
+
+The experiment CSV exports one aggregate row and three class rows per run, with a shared
+schema for all four policies. New exports append `max_queue_wait_s` after the existing fields.
+The preserved historical FCFS and WMRF-LG files retain their original headers. The CSV records
+workload profiles, topology, seed, reference weights and the ledger window. Undefined metrics
+and the baselines' latency and ageing parameter cells are empty.
 
 ## Calibration and experiment controls
 
@@ -197,7 +210,10 @@ and different explicit policy labels. `run` first analyzes feasibility, then obt
 executor from a supplier, then collects metrics independently. Each executor must build a fresh
 simulator, hosts, VMs, broker, policies, reservations and Cloudlets. The stock executor does so;
 integration tests verify identical observations/metrics and distinct Cloudlet/broker instances
-across repeated runs. Never reuse a mutable executor or Cloudlet. Future dispatch adapters must
-capture real ready/dispatch events and failure/cancellation release behavior before comparisons.
+across repeated runs. The dispatched executor also creates a fresh policy and reservation ledger,
+with repeatable placement and observed outcomes. Reuse the trace when constructing each run.
 `runStock` rejects any policy label other than `ExperimentRunner.STOCK_POLICY`; a different policy
-must provide its own executor to `run`. Reporting does not label custom executors as stock brokers.
+can provide its own executor to `run`. The dispatched entry points are `runWmrfLg` with policy ID
+`WMRF_LG`, `runFcfs` with policy ID `FCFS` and `runStrictPriority` with policy ID
+`STRICT_PRIORITY`, and `runWeightedDrf` with policy ID `WEIGHTED_DRF`.
+See the [Weighted DRF design](WEIGHTED_DRF_DESIGN.md) for four-policy reproduction commands.

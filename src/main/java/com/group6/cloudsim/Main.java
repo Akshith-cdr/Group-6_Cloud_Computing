@@ -15,6 +15,16 @@ public final class Main {
     private Main() {}
 
     public static void main(String[] args) {
+        if (args.length > 0 && args[0].equals("--final-experiment")) {
+            try { FinalExperimentCommand.run(args); }
+            catch (java.io.IOException e) { throw new java.io.UncheckedIOException("Final experiment failed", e); }
+            return;
+        }
+        if (args.length > 0 && args[0].equals("--experiment")) {
+            try { ExperimentCommand.run(args); }
+            catch (java.io.IOException e) { throw new java.io.UncheckedIOException("Experiment failed", e); }
+            return;
+        }
         if (args.length > 0 && args[0].equals("--feasibility")) {
             try { EvaluationReport.main(java.util.Arrays.copyOfRange(args, 1, args.length)); }
             catch (Exception e) { throw new IllegalArgumentException("Feasibility analysis failed", e); }
