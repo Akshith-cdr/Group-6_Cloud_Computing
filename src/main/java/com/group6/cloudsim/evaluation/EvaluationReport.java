@@ -36,7 +36,15 @@ public final class EvaluationReport {
         }
         if (result.run().observations().stream().anyMatch(o -> o.readyQueueEntry().isEmpty() || o.dispatch().isEmpty()))
             System.out.println("Ready/dispatch timestamps unavailable for some tasks; queue metrics require complete observations.");
-        System.out.println("CPU/RAM time averages unavailable; policy comparisons still require verified admission and instrumentation.");
+        System.out.println("Batch makespan (s): " + value(result.summary().batchMakespan()));
+        if (result.run().reservationShares().isEmpty()) {
+            System.out.println("CPU/RAM reservation time averages unavailable for this execution path.");
+        } else if (result.run().observationEnd() > result.run().workloadEpoch()) {
+            var shares = result.run().reservationShares().values();
+            System.out.printf(Locale.ROOT, "CPU/RAM reserved fractions: %.6f / %.6f; Jain: %s%n",
+                shares.stream().mapToDouble(usage -> usage.cpu()).sum(),
+                shares.stream().mapToDouble(usage -> usage.ram()).sum(), value(result.fairness()));
+        }
     }
 
     /** Runs all four scenarios with original stress plus zero or more named candidate property files. */

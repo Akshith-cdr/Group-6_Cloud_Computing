@@ -6,16 +6,57 @@ IIIT Sri City · Cloud Computing · Group 6 · Topic 22
 
 A shared cloud data center serves workloads with different resource needs and timing constraints. Batch jobs need steady progress, interactive requests need low latency, and inference requests need predictable response times while consuming CPU and RAM.
 
-The project will evaluate Workload-Aware Weighted Multi-Resource Fairness with Latency Guard (WMRF-LG), a project-specific scheduling policy. All policy comparisons will use identical workload inputs and infrastructure configurations. Planned measurements include mean and P95/P99 response times, throughput, CPU and RAM utilization, batch completion time, SLA miss ratio, and Jain's fairness index.
+The project implements Workload-Aware Weighted Multi-Resource Fairness with Latency Guard (WMRF-LG), a weighted, DRF-inspired heuristic. Experiments measure mean and tail response times, queue waiting time, throughput, batch makespan, time-weighted CPU and RAM reservations, SLA misses and entitlement-normalized Jain fairness.
 
-## Milestone 2: reproducible workloads
+## Scheduling experiments
 
-Milestone 3A adds deterministic SLA feasibility analysis, named calibration candidates, a centralized
-[metric contract](docs/EXPERIMENT_METRICS.md), outcome-aware metrics and a fresh-state experiment runner.
-The dispatch framework described in the milestone prompt was local/uncommitted and is absent from
-all available remote branches. Ready/dispatch timings and time-average CPU/RAM utilization remain
-unavailable; **policy comparisons are not ready**. See the
-[Milestone 3A verification report](docs/MILESTONE_3A_VERIFICATION.md) for results and remaining work.
+The final research sweep compares **FCFS, Strict Priority, Weighted DRF and WMRF-LG** and
+tests four WMRF-LG ablations. It uses seeds 42–61 across all four mixes, with the original
+stress and unapproved demonstration configurations reported separately. The paired analysis
+covers response and tail latency, queue wait, Batch makespan, throughput, SLA outcomes,
+reservation occupancy and entitlement-normalized Jain fairness.
+
+```powershell
+mvn clean test
+mvn exec:java '-Dexec.args=--final-experiment target/final-reproduction experiments/service-bound-demo.properties'
+python experiments/analysis/analyze.py target/final-reproduction --archives experiments
+```
+
+Use a new destination directory for every sweep. The analysis uses NumPy and Matplotlib.
+The intervals are pointwise and exploratory. Reservation occupancy measures held VM
+capacity-time. The finite traces and homogeneous topology limit generalization, and the
+demonstration candidate's inference SLA has zero ideal CPU slack.
+See the [final results](experiments/final/), [plots](experiments/final/plots/),
+[methodology](docs/FINAL_EXPERIMENT_METHODOLOGY.md), [audit](docs/FINAL_EXPERIMENT_AUDIT.md),
+[comparative analysis](docs/FINAL_COMPARATIVE_ANALYSIS.md), and [ablation analysis](docs/WMRF_LG_ABLATION_ANALYSIS.md).
+
+### Individual policy sweeps
+
+The arrival-driven broker admits only ready tasks and reserves VM CPU and RAM atomically. The
+[WMRF-LG design](docs/WMRF_LG_DESIGN.md) describes the scoring, reservation accounting and options.
+The [independent audit](docs/MILESTONE_3A_AUDIT.md) and [verification report](docs/MILESTONE_3A_VERIFICATION.md)
+record the evaluation checks. The same dispatcher runs FCFS and Strict Priority with
+feasible-task bypass. Strict Priority ranks Interactive first, AI inference second and
+Batch third, with arrival order within each class. Weighted DRF ranks eligible classes by
+their current entitlement-normalized PE and RAM reservations. See the [FCFS design](docs/FCFS_DESIGN.md),
+[Strict Priority design](docs/STRICT_PRIORITY_DESIGN.md) and [Weighted DRF design](docs/WEIGHTED_DRF_DESIGN.md).
+
+```powershell
+mvn clean test
+mvn exec:java '-Dexec.args=--experiment FCFS experiments/fcfs-results.csv --seeds 42,43,44 --candidate experiments/service-bound-demo.properties'
+mvn exec:java '-Dexec.args=--experiment STRICT_PRIORITY experiments/strict-priority-results.csv --seeds 42,43,44 --candidate experiments/service-bound-demo.properties'
+mvn exec:java '-Dexec.args=--experiment WEIGHTED_DRF experiments/weighted-drf-results.csv --seeds 42,43,44 --candidate experiments/service-bound-demo.properties'
+mvn exec:java '-Dexec.args=--experiment WMRF_LG experiments/wmrf-lg-results.csv --seeds 42,43,44 --candidate experiments/service-bound-demo.properties'
+```
+
+Omit `--candidate` for the original-stress sweep alone. Use `--scenario BALANCED --seeds 42`
+to run the default balanced trace alone. `--config FILE` sets the common fairness reference
+and the weights used by WMRF-LG and Weighted DRF. The candidate is an unapproved,
+intrinsically feasible CPU-bound example.
+See [FCFS results](experiments/fcfs-results.csv), [Strict Priority results](experiments/strict-priority-results.csv)
+[Weighted DRF results](experiments/weighted-drf-results.csv) and [WMRF-LG results](experiments/wmrf-lg-results.csv).
+
+## Reproducible workloads
 
 The default application now generates and runs a 120-task balanced research workload using seed 42,
 a rate of 0.5 tasks/second and a 600-second arrival horizon. The research topology has three
@@ -36,11 +77,10 @@ shuffling avoids fixed class priority. A horizon that cannot fit the sampled cou
 error; tasks are never dropped, clipped or rescaled. Repeating the same configuration reproduces
 identical records, and each run builds fresh Cloudlets from that trace.
 
-Cloudlet submission delays use a measured workload epoch when all VMs are created. Absolute
-datacenter arrival equals that epoch plus trace arrival; tests verify actual arrivals and starts.
-RAM demand is stored in MB and mapped to an `ABSOLUTE` Cloudlet RAM utilization model. This models
-resource demand but does **not** enforce concurrent task RAM reservations. The later admission
-ledger has an interface only. Response targets are experimental assumptions for future policies.
+Both paths use a measured workload epoch when all VMs are created. The default stock broker uses
+Cloudlet submission delays for future arrivals. The dispatched policies queue tasks at workload
+arrival and submit after reserving CPU and RAM. RAM demand in MB also maps to an `ABSOLUTE` Cloudlet
+utilization model.
 
 See [WORKLOAD_MODEL.md](docs/WORKLOAD_MODEL.md) for configurable ranges, timing/RAM semantics,
 Java examples, reproducibility and limitations; see [executed verification](docs/MILESTONE_2_VERIFICATION.md)
@@ -60,9 +100,9 @@ mvn exec:java '-Dexec.args=--feasibility experiments/service-bound-demo.properti
 
 Arguments are scenario, task count, seed, horizon seconds and rate tasks/second, with defaults for
 omitted trailing arguments. Custom profiles and infrastructure capacities are Java configuration
-inputs. No scheduling baseline or WMRF-LG is implemented. Research runs now report feasibility and
-measured completion metrics; missing measurements display `N/A`. Calibration candidates are explicit,
-unapproved comparisons and never replace approved stress defaults automatically.
+inputs. The default research run keeps the stock CloudSim broker and reports feasibility and measured
+completion metrics. Queue and reservation metrics are available in the dispatched experiments.
+Calibration candidates are explicit and use separate configuration names.
 
 ## Preserved Milestone 1 smoke scenario
 
@@ -82,7 +122,7 @@ A deterministic CloudSim Plus scenario creates one datacenter, one physical host
 | Interactive | Short, latency-sensitive request | 2,000 | 1 | 410 (10%) |
 | AI inference | Abstract CPU- and RAM-intensive prediction request | 12,000 | 2 | 2,253 (55%) |
 
-The scenario models inference with CPU work and RAM demand. It has no neural network execution or GPU model. Its output reports elapsed simulation times and task status. Policy comparisons, overload and SLA experiments, and research metrics are planned for later milestones.
+The scenario models inference with CPU work and RAM demand. It has no neural network execution or GPU model. Its output reports elapsed simulation times and task status. The smoke path preserves the original CloudSim configuration.
 
 ## Technology and prerequisites
 
@@ -115,6 +155,11 @@ docs/
   CONTRIBUTION_PLAN.md
   EXPERIMENT_METRICS.md
   MILESTONE_3A_VERIFICATION.md
+  MILESTONE_3A_AUDIT.md
+  WMRF_LG_DESIGN.md
+  FCFS_DESIGN.md
+  STRICT_PRIORITY_DESIGN.md
+  WEIGHTED_DRF_DESIGN.md
   WORKLOAD_MODEL.md
   MILESTONE_2_VERIFICATION.md
 src/
@@ -122,8 +167,11 @@ src/
     Main.java
     core/             SimulationConfig, SimulationController
     datacenter/       DatacenterFactory
-    evaluation/       SlaFeasibilityAnalyzer, TaskObservation, MetricsCollector
-                      Calibration, ExperimentRunner, EvaluationReport
+    dispatch/         DispatchBroker, DispatchPolicy, DispatchCloudletScheduler, VmReservations
+                      ResourceTimeAccountant, ReservationSnapshot, WmrfLgConfig
+                      WmrfLgPolicy, FcfsPolicy, StrictPriorityPolicy, WeightedDrfPolicy
+    evaluation/       SlaFeasibilityAnalyzer, TaskObservation, MetricsCollector, FairnessCalculator
+                      Calibration, ExperimentRunner, EvaluationReport, ExperimentCommand, CsvExporter
     workload/         CloudletFactory, TaskMetadata, WorkloadClass
                       WorkloadProfile, WorkloadScenario, WorkloadGenerationConfig
                       WorkloadGenerator, WorkloadTrace, WorkloadValidator, RamAdmissionLedger
@@ -139,11 +187,9 @@ immutable `WorkloadTrace` through `WorkloadValidator`. These generation modules 
 CloudSim. `SimulationConfig` defines validated infrastructure capacities and counts.
 `DatacenterFactory` creates hosts/VMs, and `CloudletFactory` creates fresh Cloudlets from task records.
 `SimulationController` owns a fresh simulator/broker, records the VM-ready workload epoch and
-returns completed Cloudlets with original metadata. `RamAdmissionLedger` defines a later integration
-contract without implementing reservation. Unit/integration tests inspect real resources, arrivals,
-RAM accounting, repeatability and broker results, including long idle gaps and simultaneous arrivals
-with non-sequential task IDs. The Milestone 3A verification run passes all 66 tests, including all
-43 existing tests and 23 evaluation cases (parameterized invocations included).
+returns completed Cloudlets with original metadata. `DispatchBroker` owns arrival and release events
+for policy execution. Tests exercise real resource contention, precise arrivals, deterministic replay,
+terminal releases, stock regressions and metric boundaries. See the [metric contract](docs/EXPERIMENT_METRICS.md).
 
 ## Team
 

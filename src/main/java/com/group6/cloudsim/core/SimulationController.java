@@ -1,12 +1,18 @@
 package com.group6.cloudsim.core;
 
 import com.group6.cloudsim.datacenter.DatacenterFactory;
+import com.group6.cloudsim.dispatch.DispatchBroker;
+import com.group6.cloudsim.dispatch.DispatchPolicy;
+import com.group6.cloudsim.dispatch.ResourceTimeAccountant;
+import com.group6.cloudsim.evaluation.SlaFeasibilityAnalyzer;
 import com.group6.cloudsim.workload.CloudletFactory;
 import com.group6.cloudsim.workload.TaskMetadata;
+import com.group6.cloudsim.workload.WorkloadClass;
 import com.group6.cloudsim.evaluation.TaskObservation;
 import java.util.Comparator;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.OptionalDouble;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -25,24 +31,32 @@ public final class SimulationController {
 
     /** Observes unsuccessful and unfinished tasks without turning them into completions. */
     public ObservedRun runObserved(SimulationConfig config) {
+        return runObserved(config, null, 0);
+    }
+
+    public ObservedRun runObserved(SimulationConfig config, DispatchPolicy policy, double accountingWindow) {
         var tasksById = config.tasks().stream()
             .collect(Collectors.toMap(TaskMetadata::id, Function.identity()));
         var simulation = new CloudSimPlus();
         DatacenterFactory.createDatacenter(simulation, config.host(), config.hostCount());
-        var broker = new DatacenterBrokerSimple(simulation);
-        broker.submitVmList(DatacenterFactory.createVms(config.vm(), config.vmCount()));
+        var vms = DatacenterFactory.createVms(config.vm(), config.vmCount());
+        var cloudlets = config.tasks().stream().map(CloudletFactory::create).toList();
+        var dispatch = policy == null ? null : new DispatchBroker(simulation, config, vms, cloudlets,
+            new SlaFeasibilityAnalyzer().analyze(config.tasks(), List.of(config.vm())).tasks(), policy, accountingWindow);
+        var broker = dispatch == null ? new DatacenterBrokerSimple(simulation) : dispatch;
+        if (dispatch == null) broker.submitVmList(vms);
         // Arrivals use a workload clock whose zero is readiness of ALL VMs, not simulator zero.
         // Submit in that callback so per-Cloudlet delays have one measured, shared origin.
         var workloadEpoch = new double[] { Double.NaN };
-        var cloudlets = config.tasks().stream().map(CloudletFactory::create).toList();
         broker.addOnVmsCreatedListener(event -> {
             if (Double.isFinite(workloadEpoch[0])) return;
             if (broker.getVmCreatedList().size() != config.vmCount())
                 throw new IllegalStateException("Not all configured VMs were created");
             workloadEpoch[0] = simulation.clock();
-            broker.submitCloudletList(new ArrayList<>(cloudlets));
+            if (dispatch == null) broker.submitCloudletList(new ArrayList<>(cloudlets));
         });
         simulation.start();
+        if (!Double.isFinite(workloadEpoch[0])) throw new IllegalStateException("Configured VMs never became ready");
 
         List<Cloudlet> finished = broker.getCloudletFinishedList();
         var completed = finished.stream().filter(c -> c.getStatus() == Cloudlet.Status.SUCCESS)
@@ -57,22 +71,36 @@ public final class SimulationController {
                 case CANCELED -> TaskObservation.Outcome.CANCELLED;
                 default -> TaskObservation.Outcome.UNFINISHED;
             };
-            // Stock broker has no arrival-driven ready queue or policy dispatch event.
+            var admission = dispatch == null ? OptionalDouble.empty() : dispatch.dispatchTime(c.getId());
             return new TaskObservation(task, outcome, workloadEpoch[0] + task.arrivalTimeSeconds(),
-                OptionalDouble.empty(), OptionalDouble.empty(), OptionalDouble.of(workloadEpoch[0]),
+                dispatch == null ? OptionalDouble.empty() : dispatch.readyTime(c.getId()), admission,
+                dispatch == null ? OptionalDouble.of(workloadEpoch[0]) : admission,
                 c.getStartTime() >= 0 ? OptionalDouble.of(c.getStartTime()) : OptionalDouble.empty(),
                 outcome == TaskObservation.Outcome.COMPLETED ? OptionalDouble.of(c.getFinishTime()) : OptionalDouble.empty());
         }).toList();
-        // Exclude CloudSim shutdown grace time from the completed-run throughput window.
-        double end = observations.stream().allMatch(o -> o.outcome() == TaskObservation.Outcome.COMPLETED)
-            ? observations.stream().mapToDouble(o -> o.completion().orElseThrow()).max().orElse(workloadEpoch[0])
-            : simulation.clock();
-        return new ObservedRun(completed, observations, workloadEpoch[0], end);
+        // Exclude shutdown grace time from fully resolved runs.
+        double end = simulation.clock();
+        if (observations.stream().allMatch(o -> o.outcome() == TaskObservation.Outcome.COMPLETED))
+            end = observations.stream().mapToDouble(o -> o.completion().orElseThrow()).max().orElse(workloadEpoch[0]);
+        else if (dispatch != null && observations.stream().noneMatch(o -> o.outcome() == TaskObservation.Outcome.UNFINISHED))
+            end = dispatch.lastRelease();
+        var shares = dispatch == null ? Map.<WorkloadClass, ResourceTimeAccountant.Usage>of() : dispatch.runShares(end);
+        return new ObservedRun(completed, observations, workloadEpoch[0], end, shares);
     }
 
     public record ObservedRun(List<CompletedTask> completed, List<TaskObservation> observations,
-                              double workloadEpoch, double observationEnd) {
-        public ObservedRun { completed = List.copyOf(completed); observations = List.copyOf(observations); }
+                              double workloadEpoch, double observationEnd,
+                              Map<WorkloadClass, ResourceTimeAccountant.Usage> reservationShares) {
+        public ObservedRun {
+            completed = List.copyOf(completed);
+            observations = List.copyOf(observations);
+            reservationShares = Map.copyOf(reservationShares);
+        }
+
+        public ObservedRun(List<CompletedTask> completed, List<TaskObservation> observations,
+                           double workloadEpoch, double observationEnd) {
+            this(completed, observations, workloadEpoch, observationEnd, Map.of());
+        }
     }
 
     /** A finished Cloudlet and its original workload profile. */

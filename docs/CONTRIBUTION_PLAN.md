@@ -6,7 +6,7 @@ The percentages below are planning targets for the full project. They guide work
 
 | Member | Target | Recommended branch | Primary ownership |
 | --- | ---: | --- | --- |
-| Akshith Veerisetty | 36% | `feature/akshith-core` | Architecture, application entry point, configuration, simulation lifecycle, WMRF-LG, and integration |
+| Akshith Veerisetty | 36% | `feature/akshith-wmrf-lg` | Architecture, application entry point, configuration, simulation lifecycle, WMRF-LG, and integration |
 | Sajja Venkata Naveen | 32% | `feature/naveen-workloads` | Datacenter, hosts, VMs, workload metadata and generation, and VM placement |
 | Pitti Aswarth Narayana | 32% | `feature/aswarth-evaluation` | Scheduling baselines, performance metrics and fairness, experimental execution, and result reporting |
 
@@ -14,7 +14,7 @@ The percentages below are planning targets for the full project. They guide work
 
 | Member | Milestone 1 maintenance | Planned modules |
 | --- | --- | --- |
-| Akshith | `Main.java`, `SimulationConfig.java`, `SimulationController.java`, and integration checks | `ClassQueueManager.java`, `ResourceTimeAccountant.java`, `WmrfLgScheduler.java` |
+| Akshith | `Main.java`, `SimulationConfig.java`, `SimulationController.java`, and integration checks | `DispatchBroker.java`, `DispatchPolicy.java`, `VmReservations.java`, `ResourceTimeAccountant.java`, `WmrfLgPolicy.java` |
 | Naveen | `DatacenterFactory.java`, `CloudletFactory.java`, `WorkloadClass.java`, `TaskMetadata.java`, and infrastructure tests | `HostFactory.java`, `VmFactory.java`, `WorkloadGenerator.java`, `VmPlacementPolicy.java` |
 | Aswarth | Support review of completion output and test cases that establish repeatability | `FcfsScheduler.java`, `PriorityScheduler.java`, `WeightedDrfBaseline.java`, `MetricsCollector.java`, `FairnessCalculator.java`, `ExperimentRunner.java`, `CsvExporter.java`, `ChartGenerator.java` |
 
@@ -23,11 +23,14 @@ Akshith coordinates integration and validates the full simulation. Naveen docume
 ## GitHub workflow
 
 Milestone 3A uses `feature/aswarth-m3a-evaluation` for Aswarth's feasibility analyzer, metric contract,
-calibration, experiment-runner preparation, tests and reporting. Approved workload profiles and
-topology stay unchanged; baseline scheduling algorithms remain deferred. Integration must supply
-the missing arrival-driven dispatch framework and ready/dispatch timestamps before policy comparison.
-The PR includes that limitation and current verification results; it must not be treated as approval
-of the illustrative calibration candidate. See [EXPERIMENT_METRICS.md](EXPERIMENT_METRICS.md).
+calibration, experiment-runner preparation, tests and reporting. The merged PR #4 is the evaluation
+foundation. The final core milestone adds an independent audit, arrival-driven scheduling,
+reservation metrics and reproducible WMRF-LG experiments. Approved
+stress profiles and topology are shared with earlier milestones. FCFS, Strict Priority and Weighted
+DRF use the same dispatcher, resource reservations and metrics as WMRF-LG. The illustrative
+calibration candidate is unapproved. See the [FCFS design](FCFS_DESIGN.md),
+[Strict Priority design](STRICT_PRIORITY_DESIGN.md), [Weighted DRF design](WEIGHTED_DRF_DESIGN.md)
+and [verification](MILESTONE_3A_VERIFICATION.md).
 
 1. Keep the repository private. Each member uses their own GitHub account and Git identity.
 2. Start a focused branch from current `main`. Use the recommended branches for the initial workstreams.
